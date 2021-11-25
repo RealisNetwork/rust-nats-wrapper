@@ -1,7 +1,5 @@
 use crate::traits::{Gettable, Message, Sendable};
-
-use rust_lib::healthchecker::HealthChecker;
-use rust_lib::logger::nats::NatsLoggerWrapper;
+use crate::logger::Logger;
 
 use futures::StreamExt;
 use log::{error, info, warn};
@@ -12,6 +10,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tokio::time::{sleep, Duration};
 
 pub struct Nats {
     stan_client: Arc<StanClient>,
@@ -50,12 +49,12 @@ impl Nats {
 
                 loop {
                     select! {
-                        () = HealthChecker::is_alive(Arc::clone(&self.status)) => break,
+                        () = Self::is_alive(Arc::clone(&self.status)) => break,
                         option = stream.next() => {
                             if let Some(raw_message) = option {
                                 match T::parse(&raw_message.payload) {
                                     Ok(message) => {
-                                        NatsLoggerWrapper::got_message(&T::topic(), &message);
+                                        Logger::got_message(&T::topic(), &message);
                                         if sender.send(message).await.is_err() {
                                             self.status.store(false, Ordering::SeqCst);
                                         }
@@ -83,14 +82,14 @@ impl Nats {
     pub async fn response(self, mut rx: Receiver<Box<dyn Sendable>>) {
         loop {
             select! {
-                () = HealthChecker::is_alive(Arc::clone(&self.status)) => break,
+                () = Self::is_alive(Arc::clone(&self.status)) => break,
                 option = rx.recv() => {
                     if let Some(message) = option {
                         match self
                             .stan_client
                             .publish(&message.get_topic(), &message.get_bytes())
                             .await {
-                            Ok(_) => NatsLoggerWrapper::sent_message(&message.get_topic(), message.get_message()),
+                            Ok(_) => Logger::sent_message(&message.get_topic(), message.get_message()),
                             Err(error) => {
                                 error!("Send to nats error: {:?}", error);
                                 self.status.store(false, Ordering::SeqCst);
@@ -101,5 +100,11 @@ impl Nats {
             }
         }
         warn!("Responder terminated!");
+    }
+
+    async fn is_alive(status: Arc<AtomicBool>) {
+        while status.load(Ordering::Acquire) {
+            sleep(Duration::from_millis(10000)).await;
+        }
     }
 }
