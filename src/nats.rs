@@ -46,7 +46,7 @@ impl Nats {
                 self.status.store(false, Ordering::SeqCst);
             }
             Ok((stan_id, mut stream)) => {
-                info!("Successfully subscribe by topi: {}", T::topic());
+                info!("Successfully subscribe by topic: {}", T::topic());
 
                 loop {
                     select! {
