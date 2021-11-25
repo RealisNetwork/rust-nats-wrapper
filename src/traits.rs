@@ -46,5 +46,5 @@ impl Sendable for (Value, String) {
 #[async_trait]
 pub trait Message<T, E>: Debug + Sync + Send {
     /// # Errors
-    async fn process(&self, params: T) -> Result<Vec<Box<dyn Sendable>>, E>;
+    async fn process(&self, params: &T) -> Result<Vec<Box<dyn Sendable>>, E>;
 }
