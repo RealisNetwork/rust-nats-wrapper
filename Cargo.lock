@@ -3832,6 +3832,7 @@ dependencies = [
 name = "rust-nats-wrapper"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "futures 0.3.18",
  "log 0.4.14",
  "ratsio 0.4.0 (git+https://github.com/RealisNetwork/ratsio.git)",
