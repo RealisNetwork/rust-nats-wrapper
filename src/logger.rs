@@ -17,7 +17,7 @@ impl Logger {
     pub fn sent_message(topic: &str, request: impl Debug) {
         info!(
             "By topic - [{:^30}] - sent message - {:?}",
-            topic.magenta(),
+            topic.cyan(),
             request
         )
     }
