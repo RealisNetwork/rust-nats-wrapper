@@ -21,7 +21,7 @@ pub trait Gettable<T, E> {
     fn parse(payload: &[u8]) -> Result<Box<dyn Message<T, E>>, Self::Error>;
 }
 
-pub trait Sendable {
+pub trait Sendable: Debug + Sync + Send {
     fn get_topic(&self) -> String;
 
     fn get_message(&self) -> Value;
