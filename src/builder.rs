@@ -4,14 +4,13 @@ use crate::traits::{Gettable, Message, Sendable};
 use futures::Future;
 use ratsio::{RatsioError, StanClient, StanOptions};
 use tokio::sync::mpsc::{Receiver, Sender};
-
-use std::sync::atomic::{AtomicBool, Ordering};
+use rust_lib::healthchecker::HealthChecker;
 use std::sync::Arc;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct NatsBuilder {
     stan_client: Arc<StanClient>,
-    status: Arc<AtomicBool>,
+    health_checker: HealthChecker,
 }
 
 impl NatsBuilder {
@@ -20,7 +19,7 @@ impl NatsBuilder {
         client_id: String,
         cluster_id: String,
         address: String,
-        status: Arc<AtomicBool>,
+        health_checker: HealthChecker,
     ) -> Result<Self, RatsioError> {
         let mut opts = StanOptions::with_options(address, cluster_id, client_id);
         opts.nats_options.subscribe_on_reconnect = false;
@@ -29,18 +28,19 @@ impl NatsBuilder {
 
         Ok(Self {
             stan_client,
-            status,
+            health_checker,
         })
     }
 
     /// # Errors
     pub async fn add_default_reconnect_handler(&self) -> Result<(), RatsioError> {
-        let status_for_reconnect = Arc::clone(&self.status);
         self.stan_client
             .nats_client
-            .add_reconnect_handler(Box::new(move |_nats_client| {
-                status_for_reconnect.store(false, Ordering::SeqCst);
-            }))
+            .add_reconnect_handler(Box::new({
+                let health_checker = self.health_checker.clone();
+                move |_nats_client| {
+                health_checker.make_sick();
+            }}))
             .await
     }
 
@@ -51,13 +51,13 @@ impl NatsBuilder {
     where
         T: Gettable<U, E>,
     {
-        let listener = Nats::new(Arc::clone(&self.stan_client), Arc::clone(&self.status));
+        let listener = Nats::new(Arc::clone(&self.stan_client), self.health_checker.clone());
 
         listener.subscribe::<T, U, E>(sender)
     }
 
     pub fn build_responder(&self, rx: Receiver<Box<dyn Sendable>>) -> impl Future<Output = ()> {
-        let responder = Nats::new(Arc::clone(&self.stan_client), Arc::clone(&self.status));
+        let responder = Nats::new(Arc::clone(&self.stan_client), self.health_checker.clone());
 
         responder.response(rx)
     }
