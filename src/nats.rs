@@ -60,6 +60,7 @@ impl Nats {
                                         if sender.send(message).await.is_err() {
                                             self.health_checker.make_sick();
                                         }
+                                        info!("{:?}", self.stan_client.acknowledge(raw_message).await);
                                     }
                                     Err(error) => error!("Error: {:?}\n while parsing this json: {:?}", error, serde_json::from_slice::<Value>(&raw_message.payload)),
                                 }
