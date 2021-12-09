@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use crate::traits::{Gettable, Message, Sendable};
 use crate::logger::Logger;
 
@@ -27,34 +28,35 @@ impl Nats {
     }
 
     /// # Panics
-    pub async fn subscribe<T, U, E>(self, sender: Sender<Box<dyn Message<U, E>>>)
+    pub async fn subscribe<G, E, P, R>(self, sender: Sender<Box<dyn Message<Params=P, Return=R>>>)
     where
-        T: Gettable<U, E>,
+        E: Debug,
+        G: Gettable<Error=E, MessageParams=P, MessageReturn=R>,
     {
         match self
             .stan_client
-            .subscribe(T::topic(), T::queue_group(), T::durable_name())
+            .subscribe(G::topic(), G::queue_group(), G::durable_name())
             .await
         {
             Err(error) => {
                 error!(
                     "Fail to subscribe by topic: {} with error: {:?}",
-                    T::topic(),
+                    G::topic(),
                     error
                 );
                 self.status.store(false, Ordering::SeqCst);
             }
             Ok((stan_id, mut stream)) => {
-                info!("Successfully subscribe by topic: {}", T::topic());
+                info!("Successfully subscribe by topic: {}", G::topic());
 
                 loop {
                     select! {
                         () = Self::is_alive(Arc::clone(&self.status)) => break,
                         option = stream.next() => {
                             if let Some(raw_message) = option {
-                                match T::parse(&raw_message.payload) {
+                                match G::parse(&raw_message.payload) {
                                     Ok(message) => {
-                                        Logger::got_message(&T::topic(), &message);
+                                        Logger::got_message(&G::topic(), &message);
                                         if sender.send(message).await.is_err() {
                                             self.status.store(false, Ordering::SeqCst);
                                         }
@@ -67,10 +69,10 @@ impl Nats {
                 }
 
                 match self.stan_client.un_subscribe(&stan_id).await {
-                    Ok(_) => warn!("Connection by topic: {} closed!", T::topic()),
+                    Ok(_) => warn!("Connection by topic: {} closed!", G::topic()),
                     Err(error) => error!(
                         "Error while unsubscribe by topic: {} from nats: {:?}",
-                        T::topic(),
+                        G::topic(),
                         error
                     ),
                 }

@@ -2,8 +2,10 @@ use serde_json::Value;
 use std::fmt::Debug;
 use async_trait::async_trait;
 
-pub trait Gettable<T, E> {
+pub trait Gettable {
     type Error: Debug;
+    type MessageParams;
+    type MessageReturn;
 
     fn topic() -> String;
 
@@ -18,7 +20,7 @@ pub trait Gettable<T, E> {
     }
 
     /// # Errors
-    fn parse(payload: &[u8]) -> Result<Box<dyn Message<T, E>>, Self::Error>;
+    fn parse(payload: &[u8]) -> Result<Box<dyn Message<Params=Self::MessageParams, Return=Self::MessageReturn>>, Self::Error>;
 }
 
 pub trait Sendable: Debug + Sync + Send {
@@ -44,7 +46,10 @@ impl Sendable for (Value, String) {
 }
 
 #[async_trait]
-pub trait Message<T, E>: Debug + Sync + Send {
+pub trait Message: Debug + Sync + Send {
+    type Params;
+    type Return;
+
     /// # Errors
-    async fn process(&self, params: &T) -> Result<Vec<Box<dyn Sendable>>, E>;
+    async fn process(&self, params: &Self::Params) -> Self::Return;
 }

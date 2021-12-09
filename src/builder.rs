@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use crate::nats::Nats;
 use crate::traits::{Gettable, Message, Sendable};
 
@@ -33,6 +34,19 @@ impl NatsBuilder {
         })
     }
 
+    pub fn build_listener<G, E, P, R>(
+        &self,
+        sender: Sender<Box<dyn Message<Params=P, Return=R>>>,
+    ) -> impl Future<Output = ()>
+        where
+            E: Debug,
+            G: Gettable<Error=E, MessageParams=P, MessageReturn=R>,
+    {
+        let listener = Nats::new(Arc::clone(&self.stan_client), Arc::clone(&self.status));
+
+        listener.subscribe::<G, E, P, R>(sender)
+    }
+
     /// # Errors
     pub async fn add_default_reconnect_handler(&self) -> Result<(), RatsioError> {
         let status_for_reconnect = Arc::clone(&self.status);
@@ -42,18 +56,6 @@ impl NatsBuilder {
                 status_for_reconnect.store(false, Ordering::SeqCst);
             }))
             .await
-    }
-
-    pub fn build_listener<T, U, E>(
-        &self,
-        sender: Sender<Box<dyn Message<U, E>>>,
-    ) -> impl Future<Output = ()>
-    where
-        T: Gettable<U, E>,
-    {
-        let listener = Nats::new(Arc::clone(&self.stan_client), Arc::clone(&self.status));
-
-        listener.subscribe::<T, U, E>(sender)
     }
 
     pub fn build_responder(&self, rx: Receiver<Box<dyn Sendable>>) -> impl Future<Output = ()> {
