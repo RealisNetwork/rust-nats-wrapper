@@ -8,22 +8,21 @@ use ratsio::StanClient;
 use serde_json::Value;
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
+use rust_lib::healthchecker::HealthChecker;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
 
 pub struct Nats {
     stan_client: Arc<StanClient>,
-    status: Arc<AtomicBool>,
+    health_checker: HealthChecker,
 }
 
 impl Nats {
     #[must_use]
-    pub fn new(stan_client: Arc<StanClient>, status: Arc<AtomicBool>) -> Self {
+    pub fn new(stan_client: Arc<StanClient>, health_checker: HealthChecker) -> Self {
         Self {
             stan_client,
-            status,
+            health_checker,
         }
     }
 
@@ -44,21 +43,22 @@ impl Nats {
                     G::topic(),
                     error
                 );
-                self.status.store(false, Ordering::SeqCst);
+                self.health_checker.make_sick();
             }
             Ok((stan_id, mut stream)) => {
                 info!("Successfully subscribe by topic: {}", G::topic());
 
                 loop {
+                    let health_checker = self.health_checker.clone();
                     select! {
-                        () = Self::is_alive(Arc::clone(&self.status)) => break,
+                        () = health_checker.is_alive() => break,
                         option = stream.next() => {
                             if let Some(raw_message) = option {
                                 match G::parse(&raw_message.payload) {
                                     Ok(message) => {
                                         Logger::got_message(&G::topic(), &message);
                                         if sender.send(message).await.is_err() {
-                                            self.status.store(false, Ordering::SeqCst);
+                                            self.health_checker.make_sick();
                                         }
                                     }
                                     Err(error) => error!("Error: {:?}\n while parsing this json: {:?}", error, serde_json::from_slice::<Value>(&raw_message.payload)),
@@ -83,8 +83,9 @@ impl Nats {
     /// # Panics
     pub async fn response(self, mut rx: Receiver<Box<dyn Sendable>>) {
         loop {
+            let health_checker = self.health_checker.clone();
             select! {
-                () = Self::is_alive(Arc::clone(&self.status)) => break,
+                () = health_checker.is_alive() => break,
                 option = rx.recv() => {
                     if let Some(message) = option {
                         match self
@@ -94,7 +95,7 @@ impl Nats {
                             Ok(_) => Logger::sent_message(&message.get_topic(), message.get_message()),
                             Err(error) => {
                                 error!("Send to nats error: {:?}", error);
-                                self.status.store(false, Ordering::SeqCst);
+                                self.health_checker.make_sick();
                             }
                         }
                     }
@@ -102,11 +103,5 @@ impl Nats {
             }
         }
         warn!("Responder terminated!");
-    }
-
-    async fn is_alive(status: Arc<AtomicBool>) {
-        while status.load(Ordering::Acquire) {
-            sleep(Duration::from_millis(10000)).await;
-        }
     }
 }
