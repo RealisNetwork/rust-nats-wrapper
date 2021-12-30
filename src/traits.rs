@@ -54,4 +54,6 @@ pub trait Message: Debug + Sync + Send {
     async fn process(&self, params: &Self::Params) -> Self::Return;
 
     fn to_json(&self) -> Value;
+
+    fn get_topic_response(&self) -> String;
 }
