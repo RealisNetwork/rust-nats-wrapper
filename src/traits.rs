@@ -55,5 +55,5 @@ pub trait Message: Debug + Sync + Send {
 
     fn to_json(&self) -> Value;
 
-    fn get_topic_response(&self) -> String;
+    fn get_topic_response(&self) -> Option<String>;
 }
