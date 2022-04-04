@@ -52,7 +52,7 @@ impl NatsBuilder {
         let status_for_reconnect = self.health_checker.clone();
         self.stan_client
             .nats_client
-            .add_reconnect_handler(Box::new(move |_nats_client| {
+            .add_disconnect_handler(Box::new(move |_nats_client| {
                 status_for_reconnect.make_sick();
             }))
             .await
